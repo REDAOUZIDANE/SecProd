@@ -25,6 +25,8 @@ import psutil
 import uuid
 import fpdf
 from fpdf import FPDF
+from mpl_toolkits.mplot3d import Axes3D
+import openai  # pip install openai
 
 # ======================
 # INDUSTRIAL PROTOCOLS
@@ -491,32 +493,39 @@ class ScureProdApp:
     def create_main_panels(self):
         """Create the main application panels using a notebook"""
         notebook = ttk.Notebook(self.root)
-        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
-        
+        notebook.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
         # Dashboard tab
         dashboard_tab = ttk.Frame(notebook)
         self.create_dashboard(dashboard_tab)
         notebook.add(dashboard_tab, text="Dashboard")
-        
         # Assets tab
         assets_tab = ttk.Frame(notebook)
         self.create_asset_panel(assets_tab)
         notebook.add(assets_tab, text="Assets")
-        
         # Network tab
         network_tab = ttk.Frame(notebook)
         self.create_network_monitor(network_tab)
         notebook.add(network_tab, text="Network")
-        
         # Alerts tab
         alerts_tab = ttk.Frame(notebook)
         self.create_alert_panel(alerts_tab)
         notebook.add(alerts_tab, text="Alerts")
-        
         # Response tab
         response_tab = ttk.Frame(notebook)
         self.create_incident_response_panel(response_tab)
         notebook.add(response_tab, text="Incident Response")
+        # Heatmap 3D tab
+        heatmap_tab = ttk.Frame(notebook)
+        self.create_heatmap3d_panel(heatmap_tab)
+        notebook.add(heatmap_tab, text="Heatmap 3D")
+        # AI Chatbot tab
+        chatbot_tab = ttk.Frame(notebook)
+        self.create_chatbot_panel(chatbot_tab)
+        notebook.add(chatbot_tab, text="AI Chatbot")
+        # Metrics tab
+        metrics_tab = ttk.Frame(notebook)
+        self.create_metrics_panel(metrics_tab)
+        notebook.add(metrics_tab, text="Industry Metrics")
     
     def create_dashboard(self, parent):
         """Create the main dashboard with overview widgets"""
@@ -1542,7 +1551,7 @@ class ScureProdApp:
         else:
             self.threat_label.config(foreground=self.safe_color)
     
-    def add_alert(self, message, source, severity, **kwargs):
+    def add_alert(self, message, source, severity, x=None, y=None, **kwargs):
         """Add a new alert to the system"""
         alert = {
             'time': datetime.now(),
@@ -1567,6 +1576,19 @@ class ScureProdApp:
         # Show notification for high severity alerts
         if severity in ["Critical", "High"]:
             self.show_notification(message, severity)
+        
+        # If alert has a location, update the heatmap data
+        if x is not None and y is not None:
+            self.heatmap_data[y, x] += self.severity_to_intensity(severity)
+    
+    def severity_to_intensity(self, severity):
+        # Map severity to a heatmap increment value
+        return {
+            "Critical": 30,
+            "High": 20,
+            "Medium": 10,
+            "Low": 5
+        }.get(severity, 1)
     
     def show_notification(self, message, severity):
         """Show a notification popup for important alerts (thread-safe)"""
@@ -2018,8 +2040,8 @@ class ScureProdApp:
         about_text = f"""ScureProd Industrial Cyber Defense Platform
 Version 1.0.0
 
-Developed for ACME Manufacturing
-© 2023 Industrial Security Team
+Developed for  Manufacturing
+© 2025 Reda Ouzidane 
 
 System ID: {self.system_id}
 Python: {platform.python_version()}
@@ -2131,6 +2153,310 @@ Memory: {mem}% used
         if messagebox.askokcancel("Quit", "Do you want to quit ScureProd?"):
             self.running = False
             self.root.destroy()
+
+    def create_heatmap3d_panel(self, parent):
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+        from mpl_toolkits.mplot3d import Axes3D
+        from tkinter import filedialog
+        # Fullscreen frame
+        parent.pack_propagate(False)
+        parent.pack(fill=tk.BOTH, expand=True)
+        # 3D data
+        self.heatmap_grid_size = 50
+        self.heatmap_data = np.random.rand(self.heatmap_grid_size, self.heatmap_grid_size) * 100
+        X = np.arange(0, self.heatmap_grid_size)
+        Y = np.arange(0, self.heatmap_grid_size)
+        X, Y = np.meshgrid(X, Y)
+        fig = plt.figure(figsize=(12, 8))
+        ax = fig.add_subplot(111, projection='3d')
+        surf = ax.plot_surface(X, Y, self.heatmap_data, cmap='plasma', edgecolor='none', antialiased=True)
+        fig.colorbar(surf, ax=ax, shrink=0.6, aspect=10, label='Threat/Activity Level')
+        ax.set_title('3D Threat/Activity Heatmap', color=self.accent_color, fontsize=16, pad=18)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_zticks([])
+        # 3D model overlay (optional)
+        self.model_loaded = False
+        def upload_model():
+            file_path = filedialog.askopenfilename(filetypes=[("3D Model Files", "*.stl *.obj")])
+            if file_path:
+                try:
+                    import trimesh
+                    mesh = trimesh.load(file_path)
+                    ax.clear()
+                    # Plot the mesh (wireframe for speed)
+                    ax.plot_trisurf(mesh.vertices[:,0], mesh.vertices[:,1], mesh.vertices[:,2], color='gray', alpha=0.3, linewidth=0.2, edgecolor='k')
+                    # Re-plot the heatmap
+                    surf = ax.plot_surface(X, Y, self.heatmap_data, cmap='plasma', edgecolor='none', antialiased=True, alpha=0.7)
+                    fig.colorbar(surf, ax=ax, shrink=0.6, aspect=10, label='Threat/Activity Level')
+                    ax.set_title('3D Threat/Activity Heatmap + Model', color=self.accent_color, fontsize=16, pad=18)
+                    ax.set_xticks([])
+                    ax.set_yticks([])
+                    ax.set_zticks([])
+                    self.model_loaded = True
+                    canvas.draw()
+                except Exception as e:
+                    messagebox.showerror("3D Model Error", f"Failed to load 3D model: {e}")
+        # Canvas
+        canvas = FigureCanvasTkAgg(fig, master=parent)
+        canvas.get_tk_widget().pack(fill='both', expand=True, padx=0, pady=0)
+        canvas.draw()
+        # Controls
+        btn_frame = ttk.Frame(parent)
+        btn_frame.pack(fill=tk.X, pady=8)
+        upload_btn = ttk.Button(btn_frame, text="Upload 3D Model (STL/OBJ)", command=upload_model, style='TButton')
+        upload_btn.pack(side=tk.LEFT, padx=10)
+        def refresh_heatmap():
+            self.heatmap_data = np.random.rand(self.heatmap_grid_size, self.heatmap_grid_size) * 100
+            ax.clear()
+            if self.model_loaded:
+                # Re-plot model if loaded
+                pass  # For simplicity, re-upload to update
+            surf = ax.plot_surface(X, Y, self.heatmap_data, cmap='plasma', edgecolor='none', antialiased=True)
+            fig.colorbar(surf, ax=ax, shrink=0.6, aspect=10, label='Threat/Activity Level')
+            ax.set_title('3D Threat/Activity Heatmap', color=self.accent_color, fontsize=16, pad=18)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_zticks([])
+            canvas.draw()
+        refresh_btn = ttk.Button(btn_frame, text="🔄 Refresh Heatmap", command=refresh_heatmap, style='TButton')
+        refresh_btn.pack(side=tk.LEFT, padx=10)
+        # Live update
+        def live_update():
+            self.heatmap_data *= 0.95
+            surf.remove()
+            surf2 = ax.plot_surface(X, Y, self.heatmap_data, cmap='plasma', edgecolor='none', antialiased=True)
+            canvas.draw()
+            parent.after(2000, live_update)
+        live_update()
+    # --- AI Chatbot Panel ---
+    def create_chatbot_panel(self, parent):
+        import threading
+        openai.api_key = "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"  # Keep this key private!
+        # --- Cool Chatbot UI ---
+        chat_frame = tk.Frame(parent, bg=self.card_color, bd=2, relief=tk.RIDGE, highlightbackground=self.accent_color, highlightthickness=2)
+        chat_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=30)
+        # Header
+        header = tk.Label(chat_frame, text="🤖 ScureProd AI Assistant", bg=self.card_color, fg=self.accent_color, font=(self.font_family, 16, 'bold'), pady=10)
+        header.pack(fill=tk.X)
+        # Chat display area
+        chat_display = scrolledtext.ScrolledText(chat_frame, wrap=tk.WORD, height=20, state=tk.NORMAL, bg="#181a20", fg="#eaf6fb", font=(self.font_family, 13), bd=0, relief=tk.FLAT, padx=12, pady=12)
+        chat_display.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+        chat_display.tag_configure('user', foreground='#5ad1ff', font=(self.font_family, 13, 'bold'))
+        chat_display.tag_configure('ai', foreground=self.accent_color, font=(self.font_family, 13, 'bold'))
+        chat_display.tag_configure('system', foreground='#888', font=(self.font_family, 12, 'italic'))
+        # Input area
+        input_frame = tk.Frame(chat_frame, bg=self.card_color)
+        input_frame.pack(fill=tk.X, pady=5)
+        user_input = tk.Entry(input_frame, font=(self.font_family, 13), bg="#232634", fg="#eaf6fb", bd=0, relief=tk.FLAT, insertbackground=self.accent_color)
+        user_input.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0), ipady=8, pady=8)
+        user_input.config(highlightbackground=self.accent_color, highlightcolor=self.accent_color, highlightthickness=1)
+        send_btn = tk.Button(input_frame, text="Send", font=(self.font_family, 12, 'bold'), bg=self.accent_color, fg="#fff", bd=0, relief=tk.FLAT, activebackground="#a084ff", activeforeground="#fff", cursor="hand2", command=lambda: send_message())
+        send_btn.pack(side=tk.RIGHT, padx=10, ipadx=16, ipady=6)
+        clear_btn = tk.Button(input_frame, text="Clear", font=(self.font_family, 12), bg="#353b48", fg="#fff", bd=0, relief=tk.FLAT, activebackground="#232634", activeforeground="#fff", cursor="hand2", command=lambda: clear_chat())
+        clear_btn.pack(side=tk.RIGHT, padx=6, ipadx=10, ipady=6)
+        # Typing animation label
+        typing_label = tk.Label(chat_frame, text="", bg=self.card_color, fg=self.accent_color, font=(self.font_family, 12, 'italic'))
+        typing_label.pack(pady=(0, 5))
+        conversation = []
+        def clear_chat():
+            chat_display.config(state=tk.NORMAL)
+            chat_display.delete(1.0, tk.END)
+            chat_display.config(state=tk.NORMAL)
+            conversation.clear()
+        def send_message():
+            msg = user_input.get().strip()
+            if not msg:
+                return
+            chat_display.config(state=tk.NORMAL)
+            chat_display.insert(tk.END, f"You: {msg}\n", 'user')
+            chat_display.see(tk.END)
+            user_input.delete(0, tk.END)
+            conversation.append({"role": "user", "content": msg})
+            typing_label.config(text="AI is typing")
+            animate_typing()
+            send_btn.config(state=tk.DISABLED)
+            user_input.config(state=tk.DISABLED)
+            # Run OpenAI call in a background thread
+            def get_response():
+                try:
+                    response = openai.ChatCompletion.create(
+                        model="gpt-3.5-turbo",
+                        messages=conversation
+                    )
+                    reply = response.choices[0].message['content']
+                except Exception as e:
+                    reply = f"[Error: {e}]"
+                def update_ui():
+                    conversation.append({"role": "assistant", "content": reply})
+                    chat_display.config(state=tk.NORMAL)
+                    chat_display.insert(tk.END, f"AI: {reply}\n", 'ai')
+                    chat_display.see(tk.END)
+                    typing_label.config(text="")
+                    send_btn.config(state=tk.NORMAL)
+                    user_input.config(state=tk.NORMAL)
+                self.root.after(0, update_ui)
+            threading.Thread(target=get_response, daemon=True).start()
+        # Typing animation (animated dots)
+        typing_anim = ["AI is typing", "AI is typing.", "AI is typing..", "AI is typing..."]
+        def animate_typing(idx=0):
+            if typing_label.cget("text") == "":
+                return
+            typing_label.config(text=typing_anim[idx % len(typing_anim)])
+            self.root.after(400, lambda: animate_typing(idx+1))
+        user_input.bind('<Return>', lambda event: send_message())
+
+    def create_heatmap_panel(self, parent):
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        from PIL import Image
+        from tkinter import filedialog
+        import csv
+
+        # Load your plant map (export SVG as PNG from Inkscape)
+        bg_img = np.array(Image.open('plant_map.png'))  # Replace with your PNG file
+
+        # Default: random demo data
+        self.points = np.array([[100, 200], [150, 250], [300, 400], [400, 100], [250, 350]])
+        self.values = np.array([70, 80, 90, 60, 85])
+
+        def load_csv_data():
+            file_path = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
+            if not file_path:
+                return
+            points = []
+            values = []
+            with open(file_path, newline='') as csvfile:
+                reader = csv.DictReader(csvfile)
+                for row in reader:
+                    points.append([float(row['x']), float(row['y'])])
+                    values.append(float(row['value']))
+            self.points = np.array(points)
+            self.values = np.array(values)
+            update_heatmap()
+
+        def update_heatmap():
+            heatmap, xedges, yedges = np.histogram2d(
+                self.points[:,0], self.points[:,1],
+                bins=(bg_img.shape[1]//10, bg_img.shape[0]//10),
+                weights=self.values, normed=False)
+            heatmap = np.rot90(heatmap)
+            heatmap = np.flipud(heatmap)
+            hm.set_data(heatmap)
+            canvas.draw()
+
+        fig, ax = plt.subplots(figsize=(12, 8))
+        ax.imshow(bg_img, extent=[0, bg_img.shape[1], 0, bg_img.shape[0]])
+        heatmap, xedges, yedges = np.histogram2d(
+            self.points[:,0], self.points[:,1],
+            bins=(bg_img.shape[1]//10, bg_img.shape[0]//10),
+            weights=self.values, normed=False)
+        heatmap = np.rot90(heatmap)
+        heatmap = np.flipud(heatmap)
+        hm = ax.imshow(heatmap, cmap='hot', alpha=0.5, extent=[0, bg_img.shape[1], 0, bg_img.shape[0]])
+        fig.colorbar(hm, ax=ax, label='Measurement')
+        ax.axis('off')
+        ax.set_title('Live Plant Heatmap', fontsize=20, color='#ff3860', pad=22)
+
+        canvas = FigureCanvasTkAgg(fig, master=parent)
+        canvas.get_tk_widget().pack(fill='both', expand=True, padx=0, pady=0)
+        canvas.draw()
+
+        # Tooltip on hover
+        annot = ax.annotate("", xy=(0,0), xytext=(20,20), textcoords="offset points",
+                            bbox=dict(boxstyle="round", fc="w"),
+                            arrowprops=dict(arrowstyle="->"))
+        annot.set_visible(False)
+        def update_annot(ind):
+            idx = ind["ind"][0]
+            pos = self.points[idx]
+            score = self.values[idx]
+            annot.xy = pos
+            text = f"Machine #{idx+1}\nValue: {score}"
+            annot.set_text(text)
+            annot.get_bbox_patch().set_facecolor('#232634')
+            annot.get_bbox_patch().set_alpha(0.8)
+        def hover(event):
+            vis = annot.get_visible()
+            if event.inaxes == ax:
+                cont, ind = hm.contains(event)
+                if cont:
+                    update_annot(ind)
+                    annot.set_visible(True)
+                    canvas.draw_idle()
+                else:
+                    if vis:
+                        annot.set_visible(False)
+                        canvas.draw_idle()
+        fig.canvas.mpl_connect("motion_notify_event", hover)
+
+        # Add Load Data button
+        btn_frame = tk.Frame(parent, bg="#232634")
+        btn_frame.pack(fill=tk.X, pady=10)
+        load_btn = tk.Button(btn_frame, text="📂 Load Data (CSV)", font=(self.font_family, 12, 'bold'), bg="#7f5fff", fg="#fff", bd=0, relief=tk.FLAT, activebackground="#a084ff", activeforeground="#fff", cursor="hand2", command=load_csv_data)
+        load_btn.pack(side=tk.LEFT, padx=10, ipadx=12, ipady=6)
+
+        # Live update (optional, for demo)
+        def live_update():
+            # Simulate new data (replace with real-time updates)
+            self.values = np.random.randint(60, 100, len(self.points))
+            update_heatmap()
+            parent.after(3000, live_update)
+        live_update()
+
+    def create_metrics_panel(self, parent):
+        import psutil
+        import time
+
+        metrics_frame = tk.Frame(parent, bg=self.card_color)
+        metrics_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=30)
+
+        # Title
+        title = tk.Label(metrics_frame, text="📊 Industry Metrics", bg=self.card_color, fg=self.accent_color, font=(self.font_family, 18, 'bold'))
+        title.pack(pady=(0, 20))
+
+        # Metrics cards
+        card_style = {'bg': '#232634', 'fg': '#eaf6fb', 'font': (self.font_family, 16, 'bold'), 'bd': 0, 'relief': tk.FLAT, 'width': 18, 'height': 2}
+        card_frame = tk.Frame(metrics_frame, bg=self.card_color)
+        card_frame.pack(pady=10)
+
+        # Asset metrics
+        total_assets = len(self.assets)
+        critical_assets = len([a for a in self.assets if a.criticality == "Critical"])
+        isolated_assets = len([a for a in self.assets if a.status == "Isolated"])
+        under_attack = len([a for a in self.assets if a.status == "Under Attack"])
+
+        tk.Label(card_frame, text=f"🖥️ Total Assets\n{total_assets}", **card_style).grid(row=0, column=0, padx=16, pady=8)
+        tk.Label(card_frame, text=f"🔥 Critical Assets\n{critical_assets}", **card_style).grid(row=0, column=1, padx=16, pady=8)
+        tk.Label(card_frame, text=f"🛡️ Isolated\n{isolated_assets}", **card_style).grid(row=0, column=2, padx=16, pady=8)
+        tk.Label(card_frame, text=f"⚠️ Under Attack\n{under_attack}", **card_style).grid(row=0, column=3, padx=16, pady=8)
+
+        # Alert metrics
+        total_alerts = len(self.alerts)
+        critical_alerts = len([a for a in self.alerts if a['severity'] == "Critical"])
+        high_alerts = len([a for a in self.alerts if a['severity'] == "High"])
+        medium_alerts = len([a for a in self.alerts if a['severity'] == "Medium"])
+        low_alerts = len([a for a in self.alerts if a['severity'] == "Low"])
+
+        tk.Label(card_frame, text=f"🚨 Alerts\n{total_alerts}", **card_style).grid(row=1, column=0, padx=16, pady=8)
+        tk.Label(card_frame, text=f"🔴 Critical\n{critical_alerts}", **card_style).grid(row=1, column=1, padx=16, pady=8)
+        tk.Label(card_frame, text=f"🟠 High\n{high_alerts}", **card_style).grid(row=1, column=2, padx=16, pady=8)
+        tk.Label(card_frame, text=f"🟡 Medium\n{medium_alerts}", **card_style).grid(row=1, column=3, padx=16, pady=8)
+        tk.Label(card_frame, text=f"🟢 Low\n{low_alerts}", **card_style).grid(row=1, column=4, padx=16, pady=8)
+
+        # System health
+        cpu = psutil.cpu_percent(interval=0.1)
+        mem = psutil.virtual_memory().percent
+        uptime = int(time.time() - psutil.boot_time()) // 60
+
+        tk.Label(card_frame, text=f"🧠 CPU\n{cpu}%", **card_style).grid(row=2, column=0, padx=16, pady=8)
+        tk.Label(card_frame, text=f"💾 Memory\n{mem}%", **card_style).grid(row=2, column=1, padx=16, pady=8)
+        tk.Label(card_frame, text=f"⏱️ Uptime\n{uptime} min", **card_style).grid(row=2, column=2, padx=16, pady=8)
+
+        # Optionally, add more cards for vulnerabilities, traffic, etc.
 
 # Main entry point
 if __name__ == "__main__":
